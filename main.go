@@ -33,22 +33,34 @@ func (parser * StreamParser) resetMetadata() {
   parser.metadataLength = ResetValue
 }
 
+func (parser * StreamParser) hasReachedMetadataMark() (bool) {
+  return parser.skippedCount == parser.MetadataOffsetMark;
+}
+
+func (parser * StreamParser) isExpectingMetadataLength() (bool) {
+  return  parser.currentMetaBuffer != nil && parser.metadataLength == ResetValue;
+}
+
+func (parser * StreamParser) isReadingMetadata() (bool) {
+  return parser.currentMetaBuffer != nil;
+}
+
 func (parser *StreamParser) Parse(buffer []byte) (err error) {
   // fmt.Printf("Parse Buffer\n")
   for _, b := range buffer {
-    if parser.skippedCount == parser.MetadataOffsetMark {
+    if parser.hasReachedMetadataMark() {
       // metadata mark
       parser.skippedCount = 0
       parser.resetMetadata()
       parser.currentMetaBuffer = &bytes.Buffer{}
     }
-    if parser.currentMetaBuffer != nil && parser.metadataLength == ResetValue {
+    if parser.isExpectingMetadataLength() {
       // metdata length byte
       parser.metadataLength = int(16 * b)
       if parser.metadataLength == 0 { // the song hasn't changed
         parser.resetMetadata()
       }
-    } else if parser.currentMetaBuffer != nil {
+    } else if parser.isReadingMetadata() {
       parser.currentMetaBuffer.WriteByte(b)
       if parser.currentMetaBuffer.Len() == parser.metadataLength {
         // metatada was found
@@ -79,7 +91,6 @@ func listenRadio(station Station, quit chan Station) {
       fmt.Printf("HTTP GET Error %s", err)
       panic(err)
     }
-    fmt.Printf("Request Status %s\n", resp.Status)
     offset, err := strconv.Atoi(resp.Header.Get(MetaHeader))
     parser := newStreamParser()
     parser.Station = station
