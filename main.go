@@ -7,7 +7,59 @@ import (
     "strconv"
     "bytes"
     "os"
+    "github.com/streadway/amqp"
+    "strings"
+    "encoding/json"
 )
+
+var (
+  connection * amqp.Connection
+  channel * amqp.Channel
+  exchange = "Songs"
+  routingKey = "Songs"
+  queueName = "Songs"
+)
+
+const IcyValueWrapper = "'"
+
+func publish(metadata string) error {
+  metadataElements := strings.Split(metadata, ";")
+  metadataInfo := map[string]string{}
+  for _, element := range metadataElements {
+    parts := strings.Split(element, "=")
+    if len(parts) == 2 {
+      var key, value string
+      key = strings.Trim(parts[0], IcyValueWrapper)
+      value = strings.Trim(parts[1], IcyValueWrapper)
+      metadataInfo[key] = value
+    }
+  }
+  var err error
+  var body []byte
+  if body, err = json.Marshal(metadataInfo) ; err != nil {
+    fmt.Printf("Error serializing json\n")
+    panic(err)
+  }
+
+  if err := channel.Publish(
+    exchange,   // publish to an exchange
+    routingKey, // routing to 0 or more queues
+    false,      // mandatory
+    false,      // immediate
+    amqp.Publishing{
+      Headers:         amqp.Table{},
+      ContentType:     "application/json",
+      ContentEncoding: "",
+      Body:            body,
+      DeliveryMode:    amqp.Transient, // 1=non-persistent, 2=persistent
+      Priority:        0,              // 0-9
+      // a bunch of application/implementation-specific fields
+    },
+  ); err != nil {
+    return fmt.Errorf("Exchange Publish: %s", err)
+  }
+  return nil
+}
 
 type Station struct {
   Title string
@@ -55,7 +107,7 @@ func (parser *StreamParser) Parse(buffer []byte) (err error) {
       parser.currentMetaBuffer = &bytes.Buffer{}
     }
     if parser.isExpectingMetadataLength() {
-      // metdata length byte
+      // metadata length byte
       parser.metadataLength = int(16 * b)
       if parser.metadataLength == 0 { // the song hasn't changed
         parser.resetMetadata()
@@ -64,7 +116,9 @@ func (parser *StreamParser) Parse(buffer []byte) (err error) {
       parser.currentMetaBuffer.WriteByte(b)
       if parser.currentMetaBuffer.Len() == parser.metadataLength {
         // metatada was found
-        fmt.Printf("%s:\n\t%s\n", parser.Station.Title, parser.currentMetaBuffer.String())
+        metadataInfo := parser.currentMetaBuffer.String()
+        fmt.Printf("%s:\n\t%s\n", parser.Station.Title, metadataInfo)
+        publish(metadataInfo)
         parser.skippedCount = 0
         parser.resetMetadata()
       }
@@ -127,6 +181,56 @@ func listenStations(stations []Station, quit chan Station) {
 }
 
 func main() {
+  amqpURI := "amqp://guest:guest@localhost:5672"
+  fmt.Printf("dialing %q", amqpURI)
+  var err error;
+  connection, err = amqp.Dial(amqpURI)
+  if err != nil {
+    fmt.Errorf("Queue connection error: %s", err)
+    panic(err)
+  }
+  defer connection.Close()
+
+  channel, err = connection.Channel()
+  if err != nil {
+    fmt.Errorf("Channel: %s", err)
+    panic(err)
+  }
+
+  if err := channel.ExchangeDeclare(
+    exchange,     // name
+    "direct", // type
+    true,         // durable
+    false,        // auto-deleted
+    false,        // internal
+    true,        // noWait
+    nil,          // arguments
+  ); err != nil {
+    fmt.Errorf("Exchange Declare: %s", err)
+    panic(err)
+  }
+  if _, err := channel.QueueDeclare(
+    queueName,
+    true, // durable
+    false, // autoDelete
+    false, // exclusive
+    true, // no wait
+    amqp.Table{},
+  ); err != nil {
+    fmt.Errorf("Queue Declare: %s", err)
+    panic(err)
+  }
+  if err := channel.QueueBind(
+    queueName, // queueName
+    routingKey, // key
+    exchange, // exchange
+    false, // no wait
+    amqp.Table{},
+  ); err != nil {
+    fmt.Errorf("Queue Bind: %s", err)
+    panic(err)
+  }
+
   quit := make(chan Station)
   var stations = []Station{{Title: "Vocal Trance", StreamUrl: "http://pub4.di.fm:80/di_vocaltrance"}, {Title: "Techno", StreamUrl: "http://pub6.di.fm:80/di_techhouse_aac"}, {Title: "House", StreamUrl: "http://pub4.di.fm:80/di_house_aac"}, {Title: "Hardstyle", StreamUrl: "http://pub7.di.fm:80/di_hardstyle_aac"}}
   listenStations(stations, quit)
