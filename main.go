@@ -15,14 +15,14 @@ import (
 var (
   connection * amqp.Connection
   channel * amqp.Channel
-  exchange = "Songs"
-  routingKey = "Songs"
-  queueName = "Songs"
+  exchange = "StreamMetadata"
+  routingKey = "StreamMetadata"
+  queueName = "StreamMetadata"
 )
 
 const IcyValueWrapper = "'"
 
-func publish(metadata string) error {
+func (station * Station) publish(metadata string) error {
   metadataElements := strings.Split(metadata, ";")
   metadataInfo := map[string]string{}
   for _, element := range metadataElements {
@@ -34,6 +34,7 @@ func publish(metadata string) error {
       metadataInfo[key] = value
     }
   }
+  metadataInfo["station_title"] = station.Title
   var err error
   var body []byte
   if body, err = json.Marshal(metadataInfo) ; err != nil {
@@ -118,7 +119,7 @@ func (parser *StreamParser) Parse(buffer []byte) (err error) {
         // metatada was found
         metadataInfo := parser.currentMetaBuffer.String()
         fmt.Printf("%s:\n\t%s\n", parser.Station.Title, metadataInfo)
-        publish(metadataInfo)
+        parser.Station.publish(metadataInfo)
         parser.skippedCount = 0
         parser.resetMetadata()
       }
