@@ -182,7 +182,10 @@ func listenStations(stations []Station, quit chan Station) {
 }
 
 func main() {
-  amqpURI := "amqp://guest:guest@localhost:5672"
+  amqpURI := os.ExpandEnv("$CLOUDAMQP_URL")
+  if amqpURI == "" {
+    amqpURI = "amqp://guest:guest@localhost:5672"
+  }
   fmt.Printf("dialing %q", amqpURI)
   var err error;
   connection, err = amqp.Dial(amqpURI)
