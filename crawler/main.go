@@ -181,13 +181,23 @@ func listenStations(stations []Station, quit chan Station) {
   }
 }
 
+func hello(res http.ResponseWriter, req *http.Request) {
+  fmt.Fprintln(res, "Nothing to see here kid, Move on to https://di-getting-warmer.herokuapp.com/\n")
+}
+
 func main() {
-  amqpURI := os.ExpandEnv("$CLOUDAMQP_URL")
+  var err error
+  http.HandleFunc("/", hello)
+  fmt.Println("Serving Crawler Suepr Friendly UI...")
+  webPort := os.Getenv("PORT")
+  if webPort == "" {
+    webPort = "8000" // development
+  }
+  amqpURI := os.Getenv("CLOUDAMQP_URL")
   if amqpURI == "" {
-    amqpURI = "amqp://guest:guest@localhost:5672"
+    amqpURI = "amqp://guest:guest@localhost:5672" // development
   }
   fmt.Printf("dialing %q", amqpURI)
-  var err error;
   connection, err = amqp.Dial(amqpURI)
   if err != nil {
     fmt.Errorf("Queue connection error: %s", err)
@@ -239,6 +249,10 @@ func main() {
   var stations = []Station{{Title: "Vocal Trance", StreamUrl: "http://pub4.di.fm:80/di_vocaltrance"}, {Title: "Techno", StreamUrl: "http://pub6.di.fm:80/di_techhouse_aac"}, {Title: "House", StreamUrl: "http://pub4.di.fm:80/di_house_aac"}, {Title: "Hardstyle", StreamUrl: "http://pub7.di.fm:80/di_hardstyle_aac"}}
   listenStations(stations, quit)
   fmt.Printf("Starting Worker %d\n", os.Getpid())
+  err = http.ListenAndServe(":"+webPort, nil)
+  if err != nil {
+    panic(err)
+  }
   quitCount := 0
   expectedQuits := len(stations)
   for {
