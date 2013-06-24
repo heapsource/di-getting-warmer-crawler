@@ -39,7 +39,7 @@ func (station * Station) publish(metadata string) error {
   var body []byte
   if body, err = json.Marshal(metadataInfo) ; err != nil {
     fmt.Printf("Error serializing json\n")
-    panic(err)
+    return  nil;
   }
 
   if err := channel.Publish(
